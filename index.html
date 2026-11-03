@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Number Guessing Game</title>
+<style>
+:root{--bg:#e9eef1;--card:#fff;--ink:#16222c;--mute:#5d6d79;--line:#cfd9df;--accent:#d8452b;--zone:#bfe3d6;--ok:#1d7a5a}
+@media (prefers-color-scheme:dark){:root{--bg:#10181e;--card:#17222a;--ink:#e6edf1;--mute:#8fa2ae;--line:#2b3b45;--accent:#ff7a5c;--zone:#1e4a3d;--ok:#5fd0a3}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:24px 16px}
+main{width:100%;max-width:560px}
+h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px}
+.levels{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 14px}
+button:hover{border-color:var(--ink)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.go{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.track{position:relative;height:44px;border-radius:8px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:6px 0 4px}
+.zone{position:absolute;top:0;bottom:0;background:var(--zone);transition:left .35s,width .35s}
+.pin{position:absolute;top:0;bottom:0;width:3px;background:var(--accent)}
+.pin span{position:absolute;top:2px;left:5px;font-size:.7rem;color:var(--mute)}
+.scale{display:flex;justify-content:space-between;color:var(--mute);font-size:.8rem}
+.row{display:flex;gap:8px;margin-top:16px}
+input{flex:1;font:inherit;font-size:1.2rem;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);min-width:0}
+#msg{min-height:1.6em;margin:12px 0 0;font-weight:700}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+.stats b{display:block;font-size:1.4rem}
+.stats small{color:var(--mute)}
+.win{color:var(--ok)}
+</style>
+</head>
+<body>
+<main>
+<h1>Number Guessing Game</h1>
+<p class="sub">The green zone shrinks as you narrow down the number.</p>
+
+<section class="card" aria-label="Difficulty">
+  <div class="levels" id="levels" role="group" aria-label="Choose difficulty"></div>
+</section>
+
+<section class="card" aria-label="Game">
+  <div id="info"></div>
+  <div class="track" id="track" aria-hidden="true"><div class="zone" id="zone"></div></div>
+  <div class="scale"><span>1</span><span id="topNum">100</span></div>
+  <div class="row">
+    <input id="guess" type="number" inputmode="numeric" placeholder="Your guess" aria-label="Your guess">
+    <button class="go" id="submit">Guess</button>
+  </div>
+  <p id="msg" role="status" aria-live="polite"></p>
+  <div class="row"><button id="again" hidden>Play again</button></div>
+</section>
+
+<section class="card stats" aria-label="Statistics">
+  <div><b id="sRounds">0</b><small>Rounds</small></div>
+  <div><b id="sTotal">0</b><small>Total score</small></div>
+  <div><b id="sBest">0</b><small>Session best</small></div>
+  <div><b id="sAll">0</b><small>All-time best</small></div>
+</section>
+</main>
+
+<script>
+const LEVELS = [
+  {name:"Easy",   top:50,  tries:10, mult:1},
+  {name:"Medium", top:100, tries:7,  mult:2},
+  {name:"Hard",   top:500, tries:9,  mult:3}
+];
+let lvl = LEVELS[1], target, attempts, low, high, over;
+let rounds = 0, total = 0, best = 0, allTime = 0;
+
+try { allTime = parseInt(localStorage.getItem("ngg_best") || "0", 10) || 0; } catch (e) {}
+
+const $ = id => document.getElementById(id);
+const levelsEl = $("levels");
+
+LEVELS.forEach(l => {
+  const b = document.createElement("button");
+  b.textContent = l.name + " (1-" + l.top + ", " + l.tries + " tries)";
+  b.onclick = () => { lvl = l; newGame(); };
+  b.dataset.name = l.name;
+  levelsEl.appendChild(b);
+});
+
+function newGame() {
+  target = Math.floor(Math.random() * lvl.top) + 1;
+  attempts = 0; low = 1; high = lvl.top; over = false;
+  document.querySelectorAll("#track .pin").forEach(p => p.remove());
+  [...levelsEl.children].forEach(b => b.classList.toggle("on", b.dataset.name === lvl.name));
+  $("topNum").textContent = lvl.top;
+  $("msg").textContent = ""; $("msg").className = "";
+  $("again").hidden = true;
+  $("guess").value = ""; $("guess").disabled = false; $("submit").disabled = false;
+  $("guess").focus();
+  render();
+}
+
+function render() {
+  $("info").textContent = lvl.name + ": guess a number from 1 to " + lvl.top +
+    ". Attempts left: " + (lvl.tries - attempts) + "/" + lvl.tries;
+  const span = lvl.top - 1 || 1;
+  $("zone").style.left = ((low - 1) / span * 100) + "%";
+  $("zone").style.width = (Math.max(high - low, 0) / span * 100 + 1) + "%";
+  $("sRounds").textContent = rounds; $("sTotal").textContent = total;
+  $("sBest").textContent = best; $("sAll").textContent = allTime;
+}
+
+function addPin(n) {
+  const p = document.createElement("div");
+  p.className = "pin";
+  p.style.left = ((n - 1) / (lvl.top - 1) * 100) + "%";
+  p.innerHTML = "<span>" + n + "</span>";
+  $("track").appendChild(p);
+}
+
+function hint(g) {
+  const d = Math.abs(g - target);
+  return d <= lvl.top * 0.05 ? "Very hot!" : d <= lvl.top * 0.15 ? "Warm." : "Cold.";
+}
+
+function finish(score) {
+  over = true; rounds++; total += score;
+  best = Math.max(best, score);
+  if (best > allTime) {
+    allTime = best;
+    try { localStorage.setItem("ngg_best", String(allTime)); } catch (e) {}
+  }
+  $("guess").disabled = true; $("submit").disabled = true;
+  $("again").hidden = false; $("again").focus();
+  render();
+}
+
+function submit() {
+  if (over) return;
+  const raw = $("guess").value.trim();
+  const g = Number(raw);
+  const msg = $("msg");
+  msg.className = "";
+  if (raw === "" || !Number.isInteger(g)) { msg.textContent = "Enter a whole number."; return; }
+  if (g < 1 || g > lvl.top) { msg.textContent = "Enter a number between 1 and " + lvl.top + "."; return; }
+
+  attempts++; addPin(g);
+  $("guess").value = ""; $("guess").focus();
+
+  if (g === target) {
+    const score = (lvl.tries - attempts + 1) * 10 * lvl.mult;
+    msg.className = "win";
+    msg.textContent = "Correct! " + target + " in " + attempts + " attempt" + (attempts > 1 ? "s" : "") + ". Score: " + score;
+    low = high = target;
+    finish(score);
+    return;
+  }
+  if (g < target) { low = Math.max(low, g + 1); msg.textContent = "Too low! " + hint(g); }
+  else { high = Math.min(high, g - 1); msg.textContent = "Too high! " + hint(g); }
+
+  if (attempts >= lvl.tries) {
+    msg.textContent = "Game over! The number was " + target + ".";
+    finish(0);
+    return;
+  }
+  render();
+}
+
+$("submit").onclick = submit;
+$("guess").addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+$("again").onclick = newGame;
+newGame();
+</script>
+</body>
+</html>
